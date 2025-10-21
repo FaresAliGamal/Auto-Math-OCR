@@ -9,13 +9,26 @@ import android.content.IntentFilter
 import android.graphics.Path
 import android.graphics.RectF
 import android.os.SystemClock
+import android.provider.Settings
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Toast
 
 class AutoMathAccessibilityService : AccessibilityService() {
 
     companion object {
         const val ACTION_TAP_TEXT = "com.math.app.ACTION_TAP_TEXT"
+        private const val TAG = "AutoMathService"
+
+        fun isEnabled(ctx: Context): Boolean {
+            val am = ctx.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+            if (!am.isEnabled) return false
+            val enabled = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+            val me = "${ctx.packageName}/${AutoMathAccessibilityService::class.java.name}"
+            return enabled.split(':').any { it.equals(me, ignoreCase = true) }
+        }
     }
 
     private var lastRunMs = 0L
@@ -27,6 +40,8 @@ class AutoMathAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         registerReceiver(manualTrigger, IntentFilter(ACTION_TAP_TEXT))
+        Toast.makeText(this, "خدمة الوصول فعّالة ✔️", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Service connected")
     }
 
     override fun onInterrupt() {}
@@ -42,38 +57,71 @@ class AutoMathAccessibilityService : AccessibilityService() {
         if (now - lastRunMs < COOL_DOWN) return
         lastRunMs = now
 
-        if (!optionalText.isNullOrBlank() && tryTapByNode(optionalText)) return
+        if (!ScreenGrabber.hasProjection()) {
+            Toast.makeText(this, "⚠️ التقاط الشاشة غير مفعّل", Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "Projection OFF")
+            return
+        }
 
-        val bmp = ScreenGrabber.capture(this) ?: return
+        if (!optionalText.isNullOrBlank() && tryTapByNode(optionalText)) {
+            Toast.makeText(this, "نقر \"$optionalText\" من الشجرة", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "Tapped node by text: $optionalText")
+            return
+        }
+
+        val bmp = ScreenGrabber.capture(this)
+        if (bmp == null) {
+            Toast.makeText(this, "لم أستطع التقاط لقطة شاشة", Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "capture() returned null")
+            return
+        }
+
         OcrHelper.recognize(this, bmp, { text ->
             if (!optionalText.isNullOrBlank()) {
                 val t = OcrHelper.detectLines(text).firstOrNull {
-                    MathSolver.normalizeDigits(it.text).contains(
-                        MathSolver.normalizeDigits(optionalText)
-                    )
+                    MathSolver.normalizeDigits(it.text).contains(MathSolver.normalizeDigits(optionalText))
                 }?.box
-                if (t != null) { tapCenter(t); return@recognize }
+                if (t != null) { tapCenter(t); Toast.makeText(this, "نقر \"$optionalText\" بالـ OCR", Toast.LENGTH_SHORT).show(); return@recognize }
             }
 
             val lines = OcrHelper.detectLines(text)
-            val eqLine = lines.firstOrNull { it.text.contains(Regex("[+\\-×x*/÷]")) } ?: return@recognize
+            val eqLine = lines.firstOrNull { it.text.contains(Regex("[+\\-×x*/÷]")) }
+            if (eqLine == null) {
+                Toast.makeText(this, "لم أجد معادلة واضحة", Toast.LENGTH_SHORT).show()
+                Log.d(TAG, "No equation-like line found")
+                return@recognize
+            }
+
             val equationRaw = eqLine.text.replace("＝","=").replace(" ", "")
-            val result = MathSolver.solveEquation(equationRaw) ?: return@recognize
+            val result = MathSolver.solveEquation(equationRaw)
+            if (result == null) {
+                Toast.makeText(this, "تعذر حل: $equationRaw", Toast.LENGTH_SHORT).show()
+                Log.d(TAG, "Cannot solve: $equationRaw")
+                return@recognize
+            }
 
             val choices = OcrHelper.detectNumericChoices(text)
-            val target = choices.firstOrNull {
-                MathSolver.normalizeDigits(it.text) == result.toString()
-            } ?: return@recognize
+            val target = choices.firstOrNull { MathSolver.normalizeDigits(it.text) == result.toString() }
+            if (target == null) {
+                Toast.makeText(this, "النتيجة $result غير موجودة ضمن الاختيارات", Toast.LENGTH_SHORT).show()
+                Log.d(TAG, "Answer $result not found in choices")
+                return@recognize
+            }
 
             tapCenter(target.box)
-        }, { /* ignore */ })
+            Toast.makeText(this, "تم النقر: $result", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "Tapped answer: $result at ${target.box}")
+        }, {
+            Toast.makeText(this, "فشل OCR", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "OCR failure", it)
+        })
     }
 
     private fun tapCenter(r: RectF) {
         val cx = (r.left + r.right) / 2f
         val cy = (r.top + r.bottom) / 2f
         val path = Path().apply { moveTo(cx, cy) }
-        val stroke = GestureDescription.StrokeDescription(path, 0, 60)
+        val stroke = GestureDescription.StrokeDescription(path, 0, 90)
         dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 

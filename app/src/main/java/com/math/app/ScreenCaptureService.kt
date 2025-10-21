@@ -10,6 +10,7 @@ import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 
 class ScreenCaptureService : Service() {
@@ -19,6 +20,7 @@ class ScreenCaptureService : Service() {
         const val EXTRA_DATA = "data"
         private const val CH_ID = "capture"
         private const val NOTI_ID = 1001
+        private const val TAG = "ScreenCaptureService"
     }
 
     override fun onCreate() {
@@ -29,18 +31,21 @@ class ScreenCaptureService : Service() {
                 .createNotificationChannel(ch)
         }
 
-        // زر "تشغيل الآن" يرسل برودكاست للخدمة لبدء الحل فورًا
-        val runIntent = Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT)
-        val piFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT else 0
-        val runPending = PendingIntent.getBroadcast(this, 0, runIntent, piFlags)
+        // Action: تشغيل يدوي (يبعت برودكاست للخدمة)
+        val runIntent = Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT).apply {
+            putExtra("target", "")
+        }
+        val runPending = PendingIntent.getBroadcast(
+            this, 1, runIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
+        )
 
         val noti = NotificationCompat.Builder(this, CH_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play) // أي أيقونة نظام شغالة على كل الأجهزة
+            .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle("التقاط الشاشة قيد التشغيل")
-            .setContentText("اضغط تشغيل الآن لبدء حل السؤال الحالى")
+            .setContentText("اضغط \"تشغيل يدوي\" للمحاولة فورًا")
+            .addAction(0, "تشغيل يدوي", runPending)
             .setOngoing(true)
-            .addAction(android.R.drawable.ic_media_play, "تشغيل الآن", runPending)
             .build()
 
         startForeground(NOTI_ID, noti)
@@ -60,6 +65,9 @@ class ScreenCaptureService : Service() {
             val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             val mp = mpm.getMediaProjection(code, data)
             ScreenGrabber.setProjection(mp)
+            Log.d(TAG, "MediaProjection set ✔️")
+        } else {
+            Log.w(TAG, "MediaProjection data missing/denied")
         }
         return START_STICKY
     }
