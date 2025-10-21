@@ -17,7 +17,10 @@ object OcrHelper {
 
     fun recognize(ctx: Context, bitmap: Bitmap,
                   onDone: (Text) -> Unit, onError: (Exception) -> Unit) {
-        recognizer.process(InputImage.fromBitmap(bitmap, 0))
+        // قص اللوحة + معالجة/تكبير قبل الـOCR
+        val roi = ImageUtils.cropBoard(bitmap)
+        val pre = ImageUtils.preprocessForDigits(roi)
+        recognizer.process(InputImage.fromBitmap(pre, 0))
             .addOnSuccessListener(onDone)
             .addOnFailureListener(onError)
     }
@@ -25,10 +28,16 @@ object OcrHelper {
     fun detectLines(t: Text): List<Detected> =
         t.textBlocks.flatMap { b ->
             b.lines.mapNotNull { line ->
-                line.boundingBox?.let { Detected(line.text.trim(), RectF(it)) }
+                line.boundingBox?.let {
+                    // طبّع الغلطات الشائعة
+                    val txt = ImageUtils.normalizeDigitLike(line.text.trim())
+                    Detected(txt, RectF(it))
+                }
             }
         }
 
     fun detectNumericChoices(t: Text): List<Detected> =
-        detectLines(t).filter { it.text.matches(Regex("^[\\d٠-٩]+$")) }
+        detectLines(t).map { d ->
+            d.copy(text = MathSolver.normalizeDigits(ImageUtils.normalizeDigitLike(d.text)))
+        }.filter { it.text.matches(Regex("^[\\d]+$")) }
 }

@@ -10,12 +10,15 @@ object MathSolver {
         s.map { arabicDigits[it] ?: it }.joinToString("")
 
     fun solveEquation(raw: String): Int? {
-        val s = normalizeDigits(raw)
+        val s = ImageUtils.normalizeDigitLike(
+            normalizeDigits(raw)
+        )
             .replace("\\s+".toRegex(), "")
-            .replace('×','*').replace('x','*').replace('·','*')
-            .replace('÷','/')
+            .replace('×','*').replace('x','*').replace('·','*').replace('﹢','+').replace('＋','+')
+            .replace('÷','/').replace('＝','=')
 
-        val m = Regex("^(-?\\d+)([+\\-*/])(-?\\d+)=?$").find(s) ?: return null
+        // يسمح بأية مسافات ويقبل = اختياريًا
+        val m = Regex("^(-?\\d+)\\s*([+\\-*/])\\s*(-?\\d+)\\s*=?$").find(s) ?: return null
         val a = m.groupValues[1].toLong()
         val op = m.groupValues[2][0]
         val b = m.groupValues[3].toLong()
