@@ -20,28 +20,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var targetInput: EditText
 
-    // طلب إذن الإشعارات (Android 13+)
     private val notifPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (!granted) {
-            status.text = "⚠️ تم رفض إذن الإشعارات. يمكنك تفعيله من الإعدادات."
-            // افتح إعدادات إشعارات التطبيق مباشرة لو حابب
-            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-            }
-            startActivity(intent)
-        }
-    }
+    ) { /* no-op */ }
 
-    // نتيجة التقاط الشاشة
     private val captureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            // تأكد من إذن الإشعارات قبل تشغيل الخدمة (لزر "تشغيل الآن")
-            requestNotifPermissionIfNeeded()
-
             val svcIntent = Intent(this, ScreenCaptureService::class.java).apply {
                 putExtra(ScreenCaptureService.EXTRA_CODE, result.resultCode)
                 putExtra(ScreenCaptureService.EXTRA_DATA, result.data)
@@ -51,9 +37,9 @@ class MainActivity : AppCompatActivity() {
             } else {
                 startService(svcIntent)
             }
-            status.text = "تم تفعيل التقاط الشاشة بنجاح ✅"
+            renderStatus()
         } else {
-            status.text = "تم رفض إذن التقاط الشاشة ❌"
+            status.text = "❌ تم رفض إذن التقاط الشاشة"
         }
     }
 
@@ -67,22 +53,49 @@ class MainActivity : AppCompatActivity() {
             val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             captureLauncher.launch(mpm.createScreenCaptureIntent())
         }
+
         findViewById<Button>(R.id.btnRun).setOnClickListener {
+            // تحقّق من الشروط أولًا
+            val accOn = AutoMathAccessibilityService.isEnabled(this)
+            val projOn = ScreenGrabber.hasProjection()
+
+            if (!accOn) {
+                status.text = "⚠️ فعّل خدمة الوصول للتطبيق أولًا"
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                return@setOnClickListener
+            }
+            if (!projOn) {
+                status.text = "⚠️ التقاط الشاشة غير مفعّل — اضغط ”ابدأ“ واسمح بالتسجيل"
+                return@setOnClickListener
+            }
+
             val i = Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT)
             i.putExtra("target", targetInput.text.toString())
             sendBroadcast(i)
             status.text = "جارٍ التشغيل…"
         }
 
-        // اطلب إذن الإشعارات مرة واحدة عند فتح التطبيق
         requestNotifPermissionIfNeeded()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        renderStatus()
+    }
+
+    private fun renderStatus() {
+        val accOn = AutoMathAccessibilityService.isEnabled(this)
+        val projOn = ScreenGrabber.hasProjection()
+
+        val acc = if (accOn) "خدمة الوصول: ✅" else "خدمة الوصول: ⛔"
+        val proj = if (projOn) "التقاط الشاشة: ✅" else "التقاط الشاشة: ⛔"
+        status.text = "$acc    |    $proj"
     }
 
     private fun requestNotifPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val nm = NotificationManagerCompat.from(this)
-            val enabled = nm.areNotificationsEnabled()
-            if (!enabled) {
+            if (!nm.areNotificationsEnabled()) {
                 notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
