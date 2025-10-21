@@ -2,65 +2,93 @@ package com.math.app
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Path
-import android.graphics.Rect
+import android.graphics.RectF
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import kotlinx.coroutines.*
 
 class AutoMathAccessibilityService : AccessibilityService() {
 
     companion object {
-        private var instance: AutoMathAccessibilityService? = null
-        private var pendingProjection: Pair<Int, Intent>? = null
+        const val ACTION_TAP_TEXT = "com.math.app.ACTION_TAP_TEXT"
+    }
 
-        fun handoverProjection(resultCode: Int, data: Intent) {
-            instance?.let {
-                ScreenGrabber.init(it, resultCode, data)
-            } ?: run {
-                pendingProjection = resultCode to data
-            }
-        }
+    private var lastRunMs = 0L
+    private val COOL_DOWN = 700L
+
+    private val manualTrigger = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) { runOnce(intent?.getStringExtra("target")) }
     }
 
     override fun onServiceConnected() {
-        super.onServiceConnected()
-        instance = this
-        pendingProjection?.let { (rc, intent) ->
-            ScreenGrabber.init(this, rc, intent)
-            pendingProjection = null
-        }
+        registerReceiver(manualTrigger, IntentFilter(ACTION_TAP_TEXT))
     }
-
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
     override fun onInterrupt() {}
-
-    fun clickByText(query: String): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val nodes = root.findAccessibilityNodeInfosByText(query) ?: return false
-        for (n in nodes) {
-            var cur: AccessibilityNodeInfo? = n
-            while (cur != null && !cur.isClickable) cur = cur.parent
-            if (cur != null) {
-                val ok = cur.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                if (ok) return true
-            }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+            event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            runOnce(null)
         }
+    }
+
+    private fun runOnce(optionalText: String?) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastRunMs < COOL_DOWN) return
+        lastRunMs = now
+
+        if (!optionalText.isNullOrBlank() && tryTapByNode(optionalText)) return
+
+        val bmp = ScreenGrabber.capture(this) ?: return
+        OcrHelper.recognize(this, bmp, { text ->
+            if (!optionalText.isNullOrBlank()) {
+                val t = OcrHelper.detectLines(text).firstOrNull {
+                    MathSolver.normalizeDigits(it.text).contains(
+                        MathSolver.normalizeDigits(optionalText)
+                    )
+                }?.box
+                if (t != null) { tapCenter(t); return@recognize }
+            }
+
+            val lines = OcrHelper.detectLines(text)
+            val eqLine = lines.firstOrNull { it.text.contains(Regex("[+\\-×x*/÷]")) } ?: return@recognize
+            val equationRaw = eqLine.text.replace("＝","=").replace(" ", "")
+            val result = MathSolver.solveEquation(equationRaw) ?: return@recognize
+
+            val choices = OcrHelper.detectNumericChoices(text)
+            val target = choices.firstOrNull {
+                MathSolver.normalizeDigits(it.text) == result.toString()
+            } ?: return@recognize
+
+            tapCenter(target.box)
+        }, { /* ignore */ })
+    }
+
+    private fun tapCenter(r: RectF) {
+        val cx = (r.left + r.right) / 2f
+        val cy = (r.top + r.bottom) / 2f
+        val path = Path().apply { moveTo(cx, cy) }
+        val stroke = GestureDescription.StrokeDescription(path, 0, 60)
+        dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+    }
+
+    private fun tryTapByNode(query: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val nodes = root.findAccessibilityNodeInfosByText(query)
+        for (n in nodes) if (tapNode(n)) return true
         return false
     }
-
-    fun tapRect(r: Rect): Boolean {
-        val p = Path().apply { moveTo(r.exactCenterX(), r.exactCenterY()) }
-        val stroke = GestureDescription.StrokeDescription(p, 0, 60)
-        return dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
-    }
-
-    suspend fun solveAndTap(solutionText: String) {
-        if (clickByText(solutionText)) return
-        val ocrList = OcrHelper.ocrOnScreen(this)
-        val rect = OcrHelper.pickBestMatch(ocrList, solutionText)
-        if (rect != null) tapRect(rect)
+    private fun tapNode(node: AccessibilityNodeInfo?): Boolean {
+        var cur = node
+        while (cur != null) {
+            if (cur.isClickable) return cur.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            cur = cur.parent
+        }
+        return false
     }
 }

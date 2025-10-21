@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">AutoMathTapper OCR</string>
+    <string name="acc_desc">خدمة وصول للنقر التلقائي باستخدام OCR</string>
 </resources>

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -e echo "==> 🧭 
+Setting up Android SDK & 
+building APK..." export 
+ANDROID_SDK_ROOT=$HOME/android-sdk 
+export 
+ANDROID_HOME=$ANDROID_SDK_ROOT 
+mkdir -p 
+$ANDROID_SDK_ROOT/cmdline-tools 
+if [ ! -d 
+"$ANDROID_SDK_ROOT/cmdline-tools/latest" 
+]; then echo "==> ⬇️ 
+Downloading Android 
+cmdline-tools..." cd 
+$ANDROID_SDK_ROOT/cmdline-tools 
+curl -L -o cmdtools.zip 
+"https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" 
+mkdir -p latest unzip -q 
+cmdtools.zip -d latest rm 
+cmdtools.zip fi export 
+PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH 
+if ! command -v sdkmanager 
+>/dev/null 2>&1; then
+echo "❌ sdkmanager not 
+found — probably PATH 
+issue." echo "Fixing 
+permissions..." chmod +x 
+$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager 
+|| true
+export 
+PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH 
+fi echo "==> ✅ Accepting 
+licenses & installing SDK 
+packages..." yes | 
+sdkmanager --licenses || 
+true yes | sdkmanager 
+"platform-tools" 
+"platforms;android-34" 
+"build-tools;34.0.0" || 
+true cd 
+/workspaces/Auto-Math-OCR 
+echo 
+"sdk.dir=$ANDROID_SDK_ROOT" 
+> local.properties
+echo "==> 📄 
+local.properties created:" 
+cat local.properties echo 
+"==> 🛠 Building debug 
+APK..." chmod +x ./gradlew 
+./gradlew clean 
+assembleDebug echo "==> ✅ 
+APK build completed. 
+Files:" ls -lh 
+app/build/outputs/apk/debug/ 
+chmod +x fix_and_build.sh
+bash fix_and_build.sh
