@@ -2,10 +2,7 @@ package com.math.app
 
 import android.Manifest
 import android.app.Activity
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.content.*
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -32,21 +29,27 @@ class MainActivity : AppCompatActivity() {
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             requestNotifPermissionIfNeeded()
-            val svcIntent = Intent(this, ScreenCaptureService::class.java).apply {
+            val svc = Intent(this, ScreenCaptureService::class.java).apply {
                 putExtra(ScreenCaptureService.EXTRA_CODE, result.resultCode)
                 putExtra(ScreenCaptureService.EXTRA_DATA, result.data)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                ContextCompat.startForegroundService(this, svcIntent)
-            } else startService(svcIntent)
+                ContextCompat.startForegroundService(this, svc)
+            } else {
+                startService(svc)
+            }
             status.text = "تم تفعيل التقاط الشاشة ✅"
-        } else status.text = "تم رفض إذن التقاط الشاشة ❌"
+        } else {
+            status.text = "تم رفض إذن التقاط الشاشة ❌"
+        }
         refreshIndicators()
     }
 
     private val accStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == AutoMathAccessibilityService.ACTION_ACC_STATUS) refreshIndicators()
+            if (intent?.action == AutoMathAccessibilityService.ACTION_ACC_STATUS) {
+                refreshIndicators()
+            }
         }
     }
 
@@ -81,8 +84,12 @@ class MainActivity : AppCompatActivity() {
             @Suppress("DEPRECATION")
             registerReceiver(accStatusReceiver, filter)
         }
+        // تحديت الحالة كل ثانية كاحتياط
         uiHandler.post(object : Runnable {
-            override fun run() { refreshIndicators(); uiHandler.postDelayed(this, 1000) }
+            override fun run() {
+                refreshIndicators()
+                uiHandler.postDelayed(this, 1000)
+            }
         })
     }
 
@@ -111,10 +118,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun ensureOverlayPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "فعّل إذن العرض فوق التطبيقات لمشاهدة سجل العمليات", Toast.LENGTH_LONG).show()
-            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName"))
-            startActivity(intent)
+            Toast.makeText(this, "فعّل إذن العرض فوق التطبيقات لمشاهدة السجل العائم", Toast.LENGTH_LONG).show()
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+            )
         }
     }
 }
