@@ -2,11 +2,15 @@ package com.math.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
@@ -17,87 +21,97 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var status: TextView
-    private lateinit var targetInput: EditText
+private lateinit var status: TextView
+private lateinit var targetInput: EditText
+private val uiHandler = Handler(Looper.getMainLooper())
 
-    private val notifPermLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* no-op */ }
+// نتيجة التقاط الشاشة  
+private val captureLauncher = registerForActivityResult(  
+    ActivityResultContracts.StartActivityForResult()  
+) { result ->  
+    if (result.resultCode == Activity.RESULT_OK && result.data != null) {  
+        requestNotifPermissionIfNeeded()  
 
-    private val captureLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            val svcIntent = Intent(this, ScreenCaptureService::class.java).apply {
-                putExtra(ScreenCaptureService.EXTRA_CODE, result.resultCode)
-                putExtra(ScreenCaptureService.EXTRA_DATA, result.data)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                ContextCompat.startForegroundService(this, svcIntent)
-            } else {
-                startService(svcIntent)
-            }
-            renderStatus()
-        } else {
-            status.text = "❌ تم رفض إذن التقاط الشاشة"
-        }
-    }
+        val svcIntent = Intent(this, ScreenCaptureService::class.java).apply {  
+            putExtra(ScreenCaptureService.EXTRA_CODE, result.resultCode)  
+            putExtra(ScreenCaptureService.EXTRA_DATA, result.data)  
+        }  
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {  
+            ContextCompat.startForegroundService(this, svcIntent)  
+        } else {  
+            startService(svcIntent)  
+        }  
+        status.text = "تم تفعيل التقاط الشاشة بنجاح ✅"  
+    } else {  
+        status.text = "تم رفض إذن التقاط الشاشة ❌"  
+    }  
+    refreshIndicators()  
+}  
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        status = findViewById(R.id.status)
-        targetInput = findViewById(R.id.targetInput)
+// Receiver من الخدمة لتأكيد حالة إمكانية الوصول  
+private val accStatusReceiver = object : BroadcastReceiver() {  
+    override fun onReceive(context: Context?, intent: Intent?) {  
+        if (intent?.action == AutoMathAccessibilityService.ACTION_ACC_STATUS) {  
+            refreshIndicators()  
+        }  
+    }  
+}  
 
-        findViewById<Button>(R.id.btnGrant).setOnClickListener {
-            val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            captureLauncher.launch(mpm.createScreenCaptureIntent())
-        }
+override fun onCreate(savedInstanceState: Bundle?) {  
+    super.onCreate(savedInstanceState)  
+    setContentView(R.layout.activity_main)  
+    status = findViewById(R.id.status)  
+    targetInput = findViewById(R.id.targetInput)  
 
-        findViewById<Button>(R.id.btnRun).setOnClickListener {
-            // تحقّق من الشروط أولًا
-            val accOn = AutoMathAccessibilityService.isEnabled(this)
-            val projOn = ScreenGrabber.hasProjection()
+    findViewById<Button>(R.id.btnGrant).setOnClickListener {  
+        val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager  
+        captureLauncher.launch(mpm.createScreenCaptureIntent())  
+    }  
+    findViewById<Button>(R.id.btnRun).setOnClickListener {  
+        val i = Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT)  
+        i.putExtra("target", targetInput.text.toString())  
+        sendBroadcast(i)  
+        status.text = "جارٍ التشغيل…"  
+    }  
 
-            if (!accOn) {
-                status.text = "⚠️ فعّل خدمة الوصول للتطبيق أولًا"
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                return@setOnClickListener
-            }
-            if (!projOn) {
-                status.text = "⚠️ التقاط الشاشة غير مفعّل — اضغط ”ابدأ“ واسمح بالتسجيل"
-                return@setOnClickListener
-            }
+    // اطلب إذن الإشعارات مرة واحدة عند فتح التطبيق  
+    requestNotifPermissionIfNeeded()  
+    refreshIndicators()  
+}  
 
-            val i = Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT)
-            i.putExtra("target", targetInput.text.toString())
-            sendBroadcast(i)
-            status.text = "جارٍ التشغيل…"
-        }
+override fun onResume() {  
+    super.onResume()  
+    registerReceiver(accStatusReceiver, IntentFilter(AutoMathAccessibilityService.ACTION_ACC_STATUS))  
+    // كمان حدّث الحالة كل ثانية كاحتياط  
+    uiHandler.post(object : Runnable {  
+        override fun run() {  
+            refreshIndicators()  
+            uiHandler.postDelayed(this, 1000)  
+        }  
+    })  
+}  
 
-        requestNotifPermissionIfNeeded()
-    }
+override fun onPause() {  
+    super.onPause()  
+    try { unregisterReceiver(accStatusReceiver) } catch (_: Exception) {}  
+    uiHandler.removeCallbacksAndMessages(null)  
+}  
 
-    override fun onResume() {
-        super.onResume()
-        renderStatus()
-    }
+private fun refreshIndicators() {  
+    val proj = if (ScreenGrabber.hasProjection()) "✅ التقاط الشاشة" else "⬜ التقاط الشاشة"  
+    val acc  = if (AutoMathAccessibilityService.isEnabled(this)) "✅ خدمة الوصول" else "❌ خدمة الوصول"  
+    status.text = "$proj   |   $acc"  
+}  
 
-    private fun renderStatus() {
-        val accOn = AutoMathAccessibilityService.isEnabled(this)
-        val projOn = ScreenGrabber.hasProjection()
+private fun requestNotifPermissionIfNeeded() {  
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {  
+        val nm = NotificationManagerCompat.from(this)  
+        if (!nm.areNotificationsEnabled()) {  
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(  
+                Manifest.permission.POST_NOTIFICATIONS  
+            )  
+        }  
+    }  
+}
 
-        val acc = if (accOn) "خدمة الوصول: ✅" else "خدمة الوصول: ⛔"
-        val proj = if (projOn) "التقاط الشاشة: ✅" else "التقاط الشاشة: ⛔"
-        status.text = "$acc    |    $proj"
-    }
-
-    private fun requestNotifPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val nm = NotificationManagerCompat.from(this)
-            if (!nm.areNotificationsEnabled()) {
-                notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-    }
 }
