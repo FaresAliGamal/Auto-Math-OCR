@@ -49,25 +49,28 @@ class AutoMathAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         val filter = IntentFilter(ACTION_TAP_TEXT)
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(manualTrigger, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(manualTrigger, filter)
-        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(manualTrigger, filter, Context.RECEIVER_NOT_EXPORTED)
+        else @Suppress("DEPRECATION") registerReceiver(manualTrigger, filter)
+
+        // جرّب عرض اللوحة لو الإذن متاح
+        try { OverlayLog.show(this) } catch (_: Exception) {}
+        OverlayLog.post("Service connected ✅")
         sendBroadcast(Intent(ACTION_ACC_STATUS).putExtra("enabled", true))
-        Toast.makeText(this, "خدمة الوصول فعّالة ✔️", Toast.LENGTH_SHORT).show()
-        Log.d(TAG, "Service connected")
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        OverlayLog.post("Service destroyed ❌")
         sendBroadcast(Intent(ACTION_ACC_STATUS).putExtra("enabled", false))
         try { unregisterReceiver(manualTrigger) } catch (_: Exception) {}
     }
 
     override fun onInterrupt() {}
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            OverlayLog.post("Window state changed: ${event.className}")
+        }
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
             event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             runOnce(null)
@@ -80,43 +83,35 @@ class AutoMathAccessibilityService : AccessibilityService() {
         lastRunMs = now
 
         if (!ScreenGrabber.hasProjection()) {
+            OverlayLog.post("Projection OFF ⚠️")
             Toast.makeText(this, "⚠️ التقاط الشاشة غير مفعّل", Toast.LENGTH_SHORT).show()
-            Log.w(TAG, "Projection OFF")
             return
         }
 
         if (!optionalText.isNullOrBlank() && tryTapByNode(optionalText)) {
+            OverlayLog.post("Tapped node by text: \"$optionalText\"")
             Toast.makeText(this, "نقر \"$optionalText\" من الشجرة", Toast.LENGTH_SHORT).show()
-            Log.d(TAG, "Tapped node by text: $optionalText")
             return
         }
 
-        val bmp = ScreenGrabber.capture(this) ?: run {
-            Toast.makeText(this, "لم أستطع التقاط لقطة شاشة", Toast.LENGTH_SHORT).show()
-            Log.w(TAG, "capture() returned null")
-            return
-        }
+        val bmp = ScreenGrabber.capture(this)
+            ?: run { OverlayLog.post("capture() returned null"); return }
 
         OcrHelper.recognizeSmart(this, bmp, { payload ->
-            val text = payload.text
-            val tr = payload.transform
+            val lines = OcrHelper.detectLines(payload.text)
+            val choices = OcrHelper.detectNumericChoices(payload.text)
 
-            val lines = OcrHelper.detectLines(text)
-            val choices = OcrHelper.detectNumericChoices(text)
-
-            // ديبَج مفيد
-            val sample = lines.take(3).joinToString(" | ") { it.text }
-            if (sample.isNotBlank()) Toast.makeText(this, "OCR: $sample", Toast.LENGTH_SHORT).show()
-            Toast.makeText(this, "Choices: ${choices.map{it.text}}", Toast.LENGTH_SHORT).show()
+            OverlayLog.post("OCR lines: " + lines.take(3).joinToString(" | ") { it.text })
+            OverlayLog.post("Choices: ${choices.map { it.text }}")
 
             if (!optionalText.isNullOrBlank()) {
                 val box = lines.firstOrNull {
                     MathSolver.normalizeDigits(it.text).contains(MathSolver.normalizeDigits(optionalText))
                 }?.box
                 if (box != null) {
-                    val mapped = OcrHelper.mapRectToScreen(box, tr)
+                    val mapped = OcrHelper.mapRectToScreen(box, payload.transform)
+                    OverlayLog.post("Click by OCR text @ (${mapped.centerX().toInt()}, ${mapped.centerY().toInt()})")
                     tapCenter(mapped)
-                    Toast.makeText(this, "OCR Tap \"$optionalText\"", Toast.LENGTH_SHORT).show()
                     return@recognizeSmart
                 }
             }
@@ -124,31 +119,31 @@ class AutoMathAccessibilityService : AccessibilityService() {
             val eqLine = lines.firstOrNull { it.text.contains(Regex("[+\\-×x*/÷]")) }
             val equationRaw = eqLine?.text?.replace("＝","=")?.replace(" ", "")
             if (equationRaw == null) {
+                OverlayLog.post("No clear equation")
                 Toast.makeText(this, "لا توجد معادلة واضحة", Toast.LENGTH_SHORT).show()
                 return@recognizeSmart
             }
-
             val result = MathSolver.solveEquation(equationRaw)
+            OverlayLog.post("Equation: $equationRaw => $result")
+
             if (result == null) {
                 Toast.makeText(this, "تعذر حل: $equationRaw", Toast.LENGTH_SHORT).show()
                 return@recognizeSmart
-            } else {
-                Toast.makeText(this, "معادلة: $equationRaw = $result", Toast.LENGTH_SHORT).show()
             }
 
             val target = choices.firstOrNull { MathSolver.normalizeDigits(it.text) == result.toString() }
             if (target == null) {
+                OverlayLog.post("Answer $result not in choices")
                 Toast.makeText(this, "النتيجة $result غير موجودة", Toast.LENGTH_SHORT).show()
                 return@recognizeSmart
             }
 
-            val mapped = OcrHelper.mapRectToScreen(target.box, tr)
+            val mapped = OcrHelper.mapRectToScreen(target.box, payload.transform)
+            OverlayLog.post("Tap @ (${mapped.centerX().toInt()}, ${mapped.centerY().toInt()}) for $result")
             tapCenter(mapped)
-            Toast.makeText(this, "نقرت: $result", Toast.LENGTH_SHORT).show()
-
         }, {
+            OverlayLog.post("OCR failure: ${it.message}")
             Toast.makeText(this, "فشل OCR", Toast.LENGTH_SHORT).show()
-            Log.e(TAG, "OCR failure", it)
         })
     }
 
