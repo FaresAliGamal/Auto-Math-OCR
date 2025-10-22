@@ -4,19 +4,27 @@ import android.graphics.*
 
 object ImageUtils {
 
-    /** قصّ منتصف الشاشة حيث اللوحة (نسبة تقريبية قابلة للتعديل) */
-    fun cropBoard(src: Bitmap): Bitmap {
+    data class CropResult(val bitmap: Bitmap, val rect: Rect, val scale: Float)
+
+    /** قصّ منتصف الشاشة حيث اللوحة (نسب قابلة للتعديل) */
+    fun cropBoardWithRect(src: Bitmap): CropResult {
         val w = src.width
         val h = src.height
-        // اللوحة تقريبا وسط الشاشة: 60% عرض × 55% ارتفاع
         val cw = (w * 0.70f).toInt()
         val ch = (h * 0.55f).toInt()
         val left = ((w - cw) / 2f).toInt().coerceAtLeast(0)
         val top  = ((h * 0.22f)).toInt().coerceAtLeast(0)
         val rw = (left + cw).coerceAtMost(w) - left
         val rh = (top + ch).coerceAtMost(h) - top
-        return Bitmap.createBitmap(src, left, top, rw.coerceAtLeast(1), rh.coerceAtLeast(1))
+        val roi = Bitmap.createBitmap(src, left, top, rw.coerceAtLeast(1), rh.coerceAtLeast(1))
+        // نفس البروسسنج القديم لكن هنطلع كمان معامل التكبير
+        val pre = preprocessForDigits(roi)
+        val scale = pre.width.toFloat() / roi.width.toFloat()  // تقريبًا 2.5
+        return CropResult(pre, Rect(left, top, left + rw, top + rh), scale)
     }
+
+    /** النسخة القديمة لازالت متاحة لو محتاجينها */
+    fun cropBoard(src: Bitmap): Bitmap = cropBoardWithRect(src).bitmap
 
     /** رمادي + رفع تباين + Threshold + تكبير */
     fun preprocessForDigits(src: Bitmap): Bitmap {
@@ -85,10 +93,7 @@ object ImageUtils {
             'g' to '9'
         )
         val sb = StringBuilder()
-        for (ch in s) {
-            val d = map[ch] ?: ch
-            sb.append(d)
-        }
+        for (ch in s) sb.append(map[ch] ?: ch)
         return sb.toString()
     }
 }
