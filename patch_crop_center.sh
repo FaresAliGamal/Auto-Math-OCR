@@ -1,3 +1,6 @@
+set -euo pipefail
+
+cat > app/src/main/java/com/math/app/ImageUtils.kt <<'KOT'
 package com.math.app
 
 import android.graphics.*
@@ -59,3 +62,9 @@ object ImageUtils {
         return t
     }
 }
+KOT
+
+echo "==> Rebuilding..."
+./gradlew --no-daemon assembleDebug
+echo "==> APKs:"
+ls -lh app/build/outputs/apk/debug/
