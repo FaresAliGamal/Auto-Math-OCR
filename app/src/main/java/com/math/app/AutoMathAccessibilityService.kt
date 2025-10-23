@@ -99,11 +99,15 @@ class AutoMathAccessibilityService : AccessibilityService() {
         val norm = TemplateOcr.normalizeGlyph(ImageUtils.preprocessForDigits(crop)) ?: run {
             Toast.makeText(this, "No glyph found", Toast.LENGTH_SHORT).show(); return
         }
-        DigitTemplates.saveTemplate(this, digit, norm)
+        DigitTemplates.saveDigit(this, digit, norm)
         Toast.makeText(this, "Saved template for $digit from region $region", Toast.LENGTH_SHORT).show()
     }
 
     private fun runOnce(optionalText: String?) {
+        // If a text/symbol was provided, try tapping it directly
+        if (optionalText != null) {
+            if (tryTapByNode(optionalText)) return
+        }
         val now = SystemClock.uptimeMillis()
         if (now - lastRun < COOLDOWN) return
         lastRun = now
@@ -150,7 +154,7 @@ class AutoMathAccessibilityService : AccessibilityService() {
                 return@recognizeBitmap
             }
 
-            val templates = DigitTemplates.loadTemplates(this)
+            val templates = DigitTemplates.loadDigits(this)
             val ansTexts = Array(4){""}
             var readCount = 0
             fun done() {

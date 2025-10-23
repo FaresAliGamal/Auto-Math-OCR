@@ -1,0 +1,157 @@
+set -euo pipefail
+
+cat > app/src/main/res/layout/activity_main.xml <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="20dp"
+    android:background="#FFEAE6">
+
+    <!-- عنوان -->
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="AutoMathTap"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- إدخال نص/رمز (اختياري) -->
+    <EditText
+        android:id="@+id/targetInput"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:hint="(اختياري) اكتب رمز/نص للضغط عليه"
+        android:inputType="text"
+        android:layout_marginTop="12dp"
+        app:layout_constraintTop_toBottomOf="@id/title"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- زر سماح/تشغيل الأذونات -->
+    <Button
+        android:id="@+id/btnGrant"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="ابدأ • سماح الأذونات"
+        android:layout_marginTop="12dp"
+        app:layout_constraintTop_toBottomOf="@id/targetInput"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- زر تشغيل يدوي -->
+    <Button
+        android:id="@+id/btnRun"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="تشغيل يدوي"
+        android:layout_marginTop="8dp"
+        app:layout_constraintTop_toBottomOf="@id/btnGrant"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- صف الرموز + - × ÷ -->
+    <LinearLayout
+        android:id="@+id/rowSymbols"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="12dp"
+        app:layout_constraintTop_toBottomOf="@id/btnRun"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <Button
+            android:id="@+id/btnPlus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="+"/>
+
+        <Button
+            android:id="@+id/btnMinus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="-"/>
+
+        <Button
+            android:id="@+id/btnTimes"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="×"/>
+
+        <Button
+            android:id="@+id/btnDivide"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="÷"/>
+    </LinearLayout>
+
+    <!-- صف الأدوات: المستطيلات + قوالب الأرقام -->
+    <LinearLayout
+        android:id="@+id/rowTools"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="8dp"
+        app:layout_constraintTop_toBottomOf="@id/rowSymbols"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <Button
+            android:id="@+id/btnRegions"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Regions"/>
+
+        <Button
+            android:id="@+id/btnTemplates"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Templates"/>
+    </LinearLayout>
+
+    <!-- استيراد صور القوالب دفعة واحدة -->
+    <Button
+        android:id="@+id/btnImportTemplates"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Import Templates (PNG)"
+        android:layout_marginTop="8dp"
+        app:layout_constraintTop_toBottomOf="@id/rowTools"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- الحالة -->
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Ready."
+        android:layout_marginTop="12dp"
+        app:layout_constraintTop_toBottomOf="@id/btnImportTemplates"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+XML
+
+echo "==> Rebuilding APK…"
+./gradlew --no-daemon assembleDebug
+
+echo "==> APKs:"
+ls -lh app/build/outputs/apk/debug/

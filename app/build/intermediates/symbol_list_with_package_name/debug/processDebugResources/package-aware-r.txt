@@ -3232,8 +3232,15 @@ id bounce
 id bounceBoth
 id bounceEnd
 id bounceStart
+id btnDivide
 id btnGrant
+id btnImportTemplates
+id btnMinus
+id btnPlus
+id btnRegions
 id btnRun
+id btnTemplates
+id btnTimes
 id buttonPanel
 id cache_measures
 id callMeasure
@@ -3505,6 +3512,8 @@ id rightToLeft
 id right_icon
 id right_side
 id rounded
+id rowSymbols
+id rowTools
 id row_index_key
 id save_non_transition_alpha
 id save_overlay_view

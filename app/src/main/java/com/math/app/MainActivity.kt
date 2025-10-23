@@ -7,6 +7,7 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -21,6 +22,16 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
+
+    private val importTemplatesLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            val (ok, fail) = DigitTemplates.importMany(this, uris)
+            Toast.makeText(this, "Imported: %d, skipped: %d".format(ok, fail), Toast.LENGTH_LONG).show()
+        }
+    }
+
     private lateinit var status: TextView
     private lateinit var targetInput: EditText
     private val uiHandler = Handler(Looper.getMainLooper())
@@ -110,6 +121,66 @@ requestNotifPermissionIfNeeded()
                 .show()
             true
         }
+
+
+        // --- Regions editor button (replaces long-press)
+        findViewById<Button>(R.id.btnRegions).setOnClickListener {
+            try { OverlayRegions.toggle(this) } catch (_: Exception) {}
+        }
+
+        // --- Templates button: dialog to save a digit template from a region
+        findViewById<Button>(R.id.btnTemplates).setOnClickListener {
+            val ctx = this
+            val edRegion = android.widget.EditText(ctx).apply {
+                hint = "region 0..4 (0=Q)"; inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            }
+            val edDigit  = android.widget.EditText(ctx).apply {
+                hint = "digit 0..9"; inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            }
+            val lay = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(48,24,48,0)
+                addView(edRegion); addView(edDigit)
+            }
+            AlertDialog.Builder(ctx)
+                .setTitle("Save digit template")
+                .setView(lay)
+                .setPositiveButton("Save") { _, _ ->
+                    val r = edRegion.text.toString().toIntOrNull()
+                    val d = edDigit.text.toString().toIntOrNull()
+                    if (r==null || d==null) {
+                        android.widget.Toast.makeText(ctx, "Enter valid numbers", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        sendBroadcast(Intent(com.math.app.AutoMathAccessibilityService.ACTION_SAVE_TEMPLATE)
+                            .putExtra("region", r).putExtra("digit", d))
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        // --- Symbol buttons (+ - × ÷) -> Broadcast to service to try tapping the symbol
+        findViewById<Button>(R.id.btnPlus).setOnClickListener {
+            sendBroadcast(Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT).putExtra("target", "+"))
+        }
+        findViewById<Button>(R.id.btnMinus).setOnClickListener {
+            sendBroadcast(Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT).putExtra("target", "-"))
+        }
+        findViewById<Button>(R.id.btnTimes).setOnClickListener {
+            sendBroadcast(Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT).putExtra("target", "×"))
+        }
+        findViewById<Button>(R.id.btnDivide).setOnClickListener {
+            sendBroadcast(Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT).putExtra("target", "÷"))
+        }
+
+
+        findViewById<Button>(R.id.btnImportTemplates).setOnClickListener {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+            /* removed startActivityForResult */}
 }
 
     override fun onResume() {
@@ -164,4 +235,5 @@ requestNotifPermissionIfNeeded()
             )
         }
     }
+
 }

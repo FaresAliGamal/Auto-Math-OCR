@@ -1,0 +1,255 @@
+package com.math.app
+
+import android.Manifest
+import android.app.Activity
+import android.content.*
+import android.media.projection.MediaProjectionManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+
+class MainActivity : AppCompatActivity() {
+
+    private val importTemplatesLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            val (ok, fail) = DigitTemplates.importMany(this, uris)
+            Toast.makeText(this, "Imported: %d, skipped: %d".format(ok, fail), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private lateinit var status: TextView
+    private lateinit var targetInput: EditText
+    private val uiHandler = Handler(Looper.getMainLooper())
+
+    private val captureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            requestNotifPermissionIfNeeded()
+            val svc = Intent(this, ScreenCaptureService::class.java).apply {
+                putExtra(ScreenCaptureService.EXTRA_CODE, result.resultCode)
+                putExtra(ScreenCaptureService.EXTRA_DATA, result.data)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(this, svc)
+            } else {
+                startService(svc)
+            }
+            status.text = "تم تفعيل التقاط الشاشة ✅"
+        } else {
+            status.text = "تم رفض إذن التقاط الشاشة ❌"
+        }
+        refreshIndicators()
+    }
+
+    private val accStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AutoMathAccessibilityService.ACTION_ACC_STATUS) {
+                refreshIndicators()
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        status = findViewById(R.id.status)
+        targetInput = findViewById(R.id.targetInput)
+
+        findViewById<Button>(R.id.btnGrant).setOnClickListener {
+            val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            captureLauncher.launch(mpm.createScreenCaptureIntent())
+        }
+        findViewById<Button>(R.id.btnRun).setOnClickListener {
+            val i = Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT)
+            i.putExtra("target", targetInput.text.toString())
+            sendBroadcast(i)
+            status.text = "جارٍ التشغيل…"
+        }
+
+        
+
+        // Long-press to open/close regions editor
+        findViewById<Button>(R.id.btnRun).setOnLongClickListener {
+            try { OverlayRegions.toggle(this) } catch (_: Exception) {}
+            true
+        }
+requestNotifPermissionIfNeeded()
+        ensureOverlayPermission()
+        refreshIndicators()
+    
+
+        // Long-press Grant to save a digit template from a region
+        findViewById<Button>(R.id.btnGrant).setOnLongClickListener {
+            val ctx = this
+            val edRegion = android.widget.EditText(ctx).apply { hint = "region 0..4 (0=Q)"; inputType = android.text.InputType.TYPE_CLASS_NUMBER }
+            val edDigit  = android.widget.EditText(ctx).apply { hint = "digit 0..9"; inputType = android.text.InputType.TYPE_CLASS_NUMBER }
+            val lay = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(48,24,48,0)
+                addView(edRegion); addView(edDigit)
+            }
+            AlertDialog.Builder(ctx)
+                .setTitle("Save digit template")
+                .setView(lay)
+                .setPositiveButton("Save") { _, _ ->
+                    val r = edRegion.text.toString().toIntOrNull()
+                    val d = edDigit.text.toString().toIntOrNull()
+                    if (r==null || d==null) {
+                        android.widget.Toast.makeText(ctx, "Enter valid numbers", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        sendBroadcast(android.content.Intent(com.math.app.AutoMathAccessibilityService.ACTION_SAVE_TEMPLATE)
+                            .putExtra("region", r).putExtra("digit", d))
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+            true
+        }
+
+
+        // --- Regions editor button (replaces long-press)
+        findViewById<Button>(R.id.btnRegions).setOnClickListener {
+            try { OverlayRegions.toggle(this) } catch (_: Exception) {}
+        }
+
+        // --- Templates button: dialog to save a digit template from a region
+        findViewById<Button>(R.id.btnTemplates).setOnClickListener {
+            val ctx = this
+            val edRegion = android.widget.EditText(ctx).apply {
+                hint = "region 0..4 (0=Q)"; inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            }
+            val edDigit  = android.widget.EditText(ctx).apply {
+                hint = "digit 0..9"; inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            }
+            val lay = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(48,24,48,0)
+                addView(edRegion); addView(edDigit)
+            }
+            AlertDialog.Builder(ctx)
+                .setTitle("Save digit template")
+                .setView(lay)
+                .setPositiveButton("Save") { _, _ ->
+                    val r = edRegion.text.toString().toIntOrNull()
+                    val d = edDigit.text.toString().toIntOrNull()
+                    if (r==null || d==null) {
+                        android.widget.Toast.makeText(ctx, "Enter valid numbers", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        sendBroadcast(Intent(com.math.app.AutoMathAccessibilityService.ACTION_SAVE_TEMPLATE)
+                            .putExtra("region", r).putExtra("digit", d))
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        // --- Symbol buttons (+ - × ÷) -> Broadcast to service to try tapping the symbol
+        findViewById<Button>(R.id.btnPlus).setOnClickListener {
+            sendBroadcast(Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT).putExtra("target", "+"))
+        }
+        findViewById<Button>(R.id.btnMinus).setOnClickListener {
+            sendBroadcast(Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT).putExtra("target", "-"))
+        }
+        findViewById<Button>(R.id.btnTimes).setOnClickListener {
+            sendBroadcast(Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT).putExtra("target", "×"))
+        }
+        findViewById<Button>(R.id.btnDivide).setOnClickListener {
+            sendBroadcast(Intent(AutoMathAccessibilityService.ACTION_TAP_TEXT).putExtra("target", "÷"))
+        }
+
+
+        findViewById<Button>(R.id.btnImportTemplates).setOnClickListener {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+            /* removed startActivityForResult */}
+}
+
+    override fun onResume() {
+        super.onResume()
+        val filter = IntentFilter(AutoMathAccessibilityService.ACTION_ACC_STATUS)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(accStatusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(accStatusReceiver, filter)
+        }
+        // تحديت الحالة كل ثانية كاحتياط
+        uiHandler.post(object : Runnable {
+            override fun run() {
+                refreshIndicators()
+                uiHandler.postDelayed(this, 1000)
+            }
+        })
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try { unregisterReceiver(accStatusReceiver) } catch (_: Exception) {}
+        uiHandler.removeCallbacksAndMessages(null)
+    }
+
+    private fun refreshIndicators() {
+        val proj = if (ScreenGrabber.hasProjection()) "✅ التقاط الشاشة" else "⬜ التقاط الشاشة"
+        val acc  = if (AutoMathAccessibilityService.isEnabled(this)) "✅ خدمة الوصول" else "❌ خدمة الوصول"
+        status.text = "$proj   |   $acc"
+    }
+
+    private fun requestNotifPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val nm = NotificationManagerCompat.from(this)
+            if (!nm.areNotificationsEnabled()) {
+                registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(
+                    Manifest.permission.POST_NOTIFICATIONS
+                )
+            }
+        }
+    }
+
+    private fun ensureOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "فعّل إذن العرض فوق التطبيقات لمشاهدة السجل العائم", Toast.LENGTH_LONG).show()
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+            )
+        }
+    }
+}
+
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_IMPORT_TEMPLATES && resultCode == RESULT_OK && data != null) {
+            val uris = mutableListOf<Uri>()
+            data.clipData?.let { cd ->
+                for (i in 0 until cd.itemCount) uris.add(cd.getItemAt(i).uri)
+            } ?: run {
+                data.data?.let { uris.add(it) }
+            }
+            if (uris.isNotEmpty()) {
+                val (ok, fail) = DigitTemplates.importMany(this, uris)
+                android.widget.Toast.makeText(this, "Imported: $ok, skipped: $fail", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
