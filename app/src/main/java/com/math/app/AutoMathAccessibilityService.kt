@@ -1,18 +1,15 @@
 package com.math.app
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Path
-import android.graphics.RectF
+import android.graphics.*
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
-import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
@@ -23,25 +20,24 @@ class AutoMathAccessibilityService : AccessibilityService() {
     companion object {
         const val ACTION_TAP_TEXT = "com.math.app.ACTION_TAP_TEXT"
         const val ACTION_ACC_STATUS = "com.math.app.ACTION_ACC_STATUS"
-        private const val TAG = "AutoMathService"
 
         fun isEnabled(ctx: Context): Boolean {
             val am = ctx.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-            val list = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-            val myPkg = ctx.packageName
-            val myCls = AutoMathAccessibilityService::class.java.name
+            val list = am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            val mePkg = ctx.packageName
+            val meCls = AutoMathAccessibilityService::class.java.name
             for (info in list) {
                 val si = info.resolveInfo?.serviceInfo ?: continue
-                if (si.packageName == myPkg && si.name == myCls) return true
+                if (si.packageName == mePkg && si.name == meCls) return true
             }
             val enabled = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
-            val me = "$myPkg/$myCls"
-            return enabled.split(':').any { it.equals(me, ignoreCase = true) }
+            val me = "$mePkg/$meCls"
+            return enabled.split(':').any { it.equals(me, true) }
         }
     }
 
-    private var lastRunMs = 0L
-    private val COOL_DOWN = 900L
+    private var lastRun = 0L
+    private val COOLDOWN = 900L
 
     private val manualTrigger = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { runOnce(intent?.getStringExtra("target")) }
@@ -51,8 +47,6 @@ class AutoMathAccessibilityService : AccessibilityService() {
         val filter = IntentFilter(ACTION_TAP_TEXT)
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(manualTrigger, filter, Context.RECEIVER_NOT_EXPORTED)
         else @Suppress("DEPRECATION") registerReceiver(manualTrigger, filter)
-
-        // جرّب عرض اللوحة لو الإذن متاح
         try { OverlayLog.show(this) } catch (_: Exception) {}
         OverlayLog.post("Service connected ✅")
         sendBroadcast(Intent(ACTION_ACC_STATUS).putExtra("enabled", true))
@@ -66,11 +60,7 @@ class AutoMathAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
-
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            OverlayLog.post("Window state changed: ${event.className}")
-        }
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
             event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             runOnce(null)
@@ -79,71 +69,82 @@ class AutoMathAccessibilityService : AccessibilityService() {
 
     private fun runOnce(optionalText: String?) {
         val now = SystemClock.uptimeMillis()
-        if (now - lastRunMs < COOL_DOWN) return
-        lastRunMs = now
+        if (now - lastRun < COOLDOWN) return
+        lastRun = now
 
         if (!ScreenGrabber.hasProjection()) {
             OverlayLog.post("Projection OFF ⚠️")
-            Toast.makeText(this, "⚠️ التقاط الشاشة غير مفعّل", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Enable screen capture", Toast.LENGTH_SHORT).show()
             return
         }
 
-        if (!optionalText.isNullOrBlank() && tryTapByNode(optionalText)) {
-            OverlayLog.post("Tapped node by text: \"$optionalText\"")
-            Toast.makeText(this, "نقر \"$optionalText\" من الشجرة", Toast.LENGTH_SHORT).show()
+        val bmp = ScreenGrabber.capture(this) ?: run { OverlayLog.post("capture() == null"); return }
+
+        val rects = OverlayRegions.getSavedRectsPx(this)
+        if (rects.size == 5) {
+            solveUsingRegions(bmp, rects)
             return
         }
 
-        val bmp = ScreenGrabber.capture(this)
-            ?: run { OverlayLog.post("capture() returned null"); return }
+        Toast.makeText(this, "Long-press the Run button to set regions first", Toast.LENGTH_LONG).show()
+    }
 
-        OcrHelper.recognizeSmart(this, bmp, { payload ->
-            val lines = OcrHelper.detectLines(payload.text)
-            val choices = OcrHelper.detectNumericChoices(payload.text)
+    private fun solveUsingRegions(full: Bitmap, rects: List<RectF>) {
+        val crops = rects.map { r ->
+            val L = r.left.toInt().coerceAtLeast(0)
+            val T = r.top.toInt().coerceAtLeast(0)
+            val W = (r.width().toInt()).coerceAtLeast(1).coerceAtMost(full.width - L)
+            val H = (r.height().toInt()).coerceAtLeast(1).coerceAtMost(full.height - T)
+            Bitmap.createBitmap(full, L, T, W, H)
+        }
 
-            OverlayLog.post("OCR lines: " + lines.take(3).joinToString(" | ") { it.text })
-            OverlayLog.post("Choices: ${choices.map { it.text }}")
-
-            if (!optionalText.isNullOrBlank()) {
-                val box = lines.firstOrNull {
-                    MathSolver.normalizeDigits(it.text).contains(MathSolver.normalizeDigits(optionalText))
-                }?.box
-                if (box != null) {
-                    val mapped = OcrHelper.mapRectToScreen(box, payload.transform)
-                    OverlayLog.post("Click by OCR text @ (${mapped.centerX().toInt()}, ${mapped.centerY().toInt()})")
-                    tapCenter(mapped)
-                    return@recognizeSmart
-                }
+        val qBmp = ImageUtils.preprocessForDigits(crops[0])
+        OcrRegionsHelper.recognizeBitmap(qBmp, { qText ->
+            val lines = OcrRegionsHelper.allLines(qText)
+            OverlayLog.post("Q lines: $lines")
+            val eqLine = lines.firstOrNull { it.contains(Regex("[+\\-×x*/÷=]")) }
+            if (eqLine.isNullOrBlank()) {
+                Toast.makeText(this, "No clear equation in question region", Toast.LENGTH_SHORT).show()
+                return@recognizeBitmap
             }
-
-            val eqLine = lines.firstOrNull { it.text.contains(Regex("[+\\-×x*/÷]")) }
-            val equationRaw = eqLine?.text?.replace("＝","=")?.replace(" ", "")
-            if (equationRaw == null) {
-                OverlayLog.post("No clear equation")
-                Toast.makeText(this, "لا توجد معادلة واضحة", Toast.LENGTH_SHORT).show()
-                return@recognizeSmart
-            }
-            val result = MathSolver.solveEquation(equationRaw)
-            OverlayLog.post("Equation: $equationRaw => $result")
-
+            val equation = eqLine.replace("＝","=").replace(" ", "")
+            val result = MathSolver.solveEquation(equation)
+            OverlayLog.post("Equation: $equation => $result")
             if (result == null) {
-                Toast.makeText(this, "تعذر حل: $equationRaw", Toast.LENGTH_SHORT).show()
-                return@recognizeSmart
+                Toast.makeText(this, "Cannot solve: $equation", Toast.LENGTH_SHORT).show()
+                return@recognizeBitmap
             }
 
-            val target = choices.firstOrNull { MathSolver.normalizeDigits(it.text) == result.toString() }
-            if (target == null) {
-                OverlayLog.post("Answer $result not in choices")
-                Toast.makeText(this, "النتيجة $result غير موجودة", Toast.LENGTH_SHORT).show()
-                return@recognizeSmart
+            val ansTexts = Array(4){""}
+            var readCount = 0
+            fun done() {
+                if (readCount < 4) return
+                OverlayLog.post("Answers OCR: ${ansTexts.toList()}")
+                val idx = ansTexts.indexOfFirst { it == result.toString() }
+                if (idx < 0) {
+                    Toast.makeText(this, "Answer $result not found in answer regions", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                val r = rects[idx+1]
+                val tap = RectF(r)
+                tapCenter(tap)
+                Toast.makeText(this, "Tapped answer: $result", Toast.LENGTH_SHORT).show()
             }
 
-            val mapped = OcrHelper.mapRectToScreen(target.box, payload.transform)
-            OverlayLog.post("Tap @ (${mapped.centerX().toInt()}, ${mapped.centerY().toInt()}) for $result")
-            tapCenter(mapped)
+            for (i in 1..4) {
+                val pb = ImageUtils.preprocessForDigits(crops[i])
+                OcrRegionsHelper.recognizeBitmap(pb, { t ->
+                    val s = OcrRegionsHelper.bestLineDigits(t)
+                    ansTexts[i-1] = MathSolver.normalizeDigits(s)
+                    readCount++; done()
+                }, {
+                    ansTexts[i-1] = ""
+                    readCount++; done()
+                })
+            }
         }, {
-            OverlayLog.post("OCR failure: ${it.message}")
-            Toast.makeText(this, "فشل OCR", Toast.LENGTH_SHORT).show()
+            OverlayLog.post("OCR failure (Q): ${it.message}")
+            Toast.makeText(this, "OCR failed for question", Toast.LENGTH_SHORT).show()
         })
     }
 

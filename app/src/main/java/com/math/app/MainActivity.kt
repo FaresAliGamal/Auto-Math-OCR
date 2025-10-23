@@ -70,7 +70,14 @@ class MainActivity : AppCompatActivity() {
             status.text = "جارٍ التشغيل…"
         }
 
-        requestNotifPermissionIfNeeded()
+        
+
+        // Long-press to open/close regions editor
+        findViewById<Button>(R.id.btnRun).setOnLongClickListener {
+            try { OverlayRegions.toggle(this) } catch (_: Exception) {}
+            true
+        }
+requestNotifPermissionIfNeeded()
         ensureOverlayPermission()
         refreshIndicators()
     }
