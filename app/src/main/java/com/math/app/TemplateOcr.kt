@@ -102,4 +102,12 @@ object TemplateOcr {
         }
         return best
     }
+
+
+    // --- shim للحفاظ على التوافق مع النداءات القديمة ---
+    // بعض الأجزاء تنادي normalizeDigits؛ نعيد توجيهها إلى normalizeGlyph.
+    fun normalizeDigits(bmp: android.graphics.Bitmap): android.graphics.Bitmap? {
+        return normalizeGlyph(bmp)
+    }
+
 }

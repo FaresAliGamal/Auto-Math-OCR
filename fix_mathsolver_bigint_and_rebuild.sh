@@ -1,0 +1,119 @@
+set -euo pipefail
+
+SOLVER="app/src/main/java/com/math/app/MathSolver.kt"
+if [ ! -f "$SOLVER" ]; then
+  echo "[!] لم يتم العثور على $SOLVER" >&2
+  exit 1
+fi
+
+echo "[*] Backup MathSolver.kt -> .bak"
+cp "$SOLVER" "$SOLVER.bak"
+
+cat > "$SOLVER" <<'KOT'
+package com.math.app
+
+import java.math.BigInteger
+
+object MathSolver {
+
+    // يدعم + - × ÷ مع أعداد صحيحة بأي طول (BigInteger)
+    fun solveEquation(raw: String): String {
+        try {
+            // 1) توحيد الرموز وإزالة المسافات
+            val s = raw
+                .replace("\\s+".toRegex(), "")
+                .replace('x', '×')
+                .replace('X', '×')
+                .replace('*', '×')
+                .replace('/', '÷')
+
+            if (s.isEmpty()) return ""
+
+            // 2) تحويل السلسلة لتوكنز: [رقم, رمز, رقم, ...]
+            val tokens = mutableListOf<String>()
+            val num = StringBuilder()
+            fun flushNum() {
+                if (num.isNotEmpty()) {
+                    tokens += num.toString()
+                    num.setLength(0)
+                }
+            }
+            for (ch in s) {
+                if (ch.isDigit()) {
+                    num.append(ch)
+                } else if (ch == '+' || ch == '-' || ch == '×' || ch == '÷') {
+                    flushNum()
+                    tokens += ch.toString()
+                } else {
+                    // تجاهل أي رموز غير معروفة بدل ما نكسر
+                    // (لو عايز تشدد، ارجع "ERR")
+                }
+            }
+            flushNum()
+            if (tokens.isEmpty()) return ""
+
+            // إزالة أي رموز زائدة في البداية/النهاية
+            while (tokens.isNotEmpty() && tokens.first() in listOf("+","-","×","÷")) tokens.removeAt(0)
+            while (tokens.isNotEmpty() && tokens.last()  in listOf("+","-","×","÷")) tokens.removeAt(tokens.lastIndex)
+            if (tokens.isEmpty()) return ""
+
+            // 3) مرحلة ضرب/قسمة أولاً (أولوية)
+            val md = mutableListOf<String>()
+            var i = 0
+            while (i < tokens.size) {
+                val t = tokens[i]
+                if (t == "×" || t == "÷") {
+                    // لازم يكون فيه رقم قبل وبعد
+                    if (md.isEmpty()) return "ERR"
+                    val left = md.removeAt(md.lastIndex).toBigIntegerOrZero()
+                    if (i + 1 >= tokens.size) return "ERR"
+                    val right = tokens[i + 1].toBigIntegerOrZero()
+
+                    val res = if (t == "×") {
+                        left * right
+                    } else {
+                        if (right == BigInteger.ZERO) return "ERR_DIV0"
+                        left / right // قسمة صحيحة
+                    }
+                    md += res.toString()
+                    i += 2
+                } else {
+                    md += t
+                    i += 1
+                }
+            }
+
+            // 4) مرحلة جمع/طرح من اليسار لليمين
+            if (md.isEmpty()) return ""
+            var acc = md[0].toBigIntegerOrZero()
+            var j = 1
+            while (j < md.size) {
+                val op = md[j]
+                val rhs = md.getOrNull(j + 1)?.toBigIntegerOrZero() ?: return "ERR"
+                when (op) {
+                    "+" -> acc = acc + rhs
+                    "-" -> acc = acc - rhs
+                    else -> return "ERR"
+                }
+                j += 2
+            }
+            return acc.toString()
+        } catch (_: Exception) {
+            return "ERR"
+        }
+    }
+
+    private fun String.toBigIntegerOrZero(): BigInteger {
+        // يمنع NumberFormatException مهما كان طول الرقم
+        return if (this.all { it.isDigit() }) {
+            if (this.isEmpty()) BigInteger.ZERO else BigInteger(this)
+        } else BigInteger.ZERO
+    }
+}
+KOT
+
+echo "[*] Rebuilding..."
+./gradlew assembleDebug --no-daemon
+
+echo "[*] APKs:"
+ls -lh app/build/outputs/apk/debug/ || true
