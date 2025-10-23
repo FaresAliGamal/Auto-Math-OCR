@@ -110,7 +110,7 @@ object OverlayRegions {
         return r.map { RectF(it.left*sw, it.top*sh, it.right*sw, it.bottom*sh) }
     }
 
-    private class RegionView(
+        private class RegionView(
         ctx: Context,
         private val index: Int,
         val rect: RectF,
@@ -118,45 +118,53 @@ object OverlayRegions {
         private val maxH: Int
     ) : View(ctx) {
         private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (index==0) 0x66FFFFFF.toInt() else 0x66FFFF00.toInt()
+            color = if (index == 0) 0x66FFFFFF.toInt() else 0x66FFFF00.toInt()
             style = Paint.Style.STROKE
             strokeWidth = 5f
         }
-        private val fill = Paint().apply { color = 0x2200AAFF.toInt().toInt() }
+        private val fill = Paint().apply { color = 0x2200AAFF.toInt() }
         private val textP = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE; textSize = 36f; typeface = Typeface.MONOSPACE
         }
         private val handle = Paint().apply { color = Color.WHITE }
 
-        private var mode: Int = 0 // 0: drag, 1: resize
-        private var lastX=0f; private var lastY=0f
-        private val hs = 36f
+        private var mode = 0 // 0: drag, 1: resize
+        private var lastX = 0f; private var lastY = 0f
+        private val hs = 36f // handle size
 
         override fun onDraw(c: Canvas) {
             c.drawRect(rect, fill)
             c.drawRect(rect, border)
-            c.drawText(if (index==0) "Q" else "A$index", rect.left+8, rect.top+40, textP)
-            c.drawRect(rect.right-hs, rect.bottom-hs, rect.right, rect.bottom, handle)
+            c.drawText(if (index == 0) "Q" else "A$index", rect.left + 8, rect.top + 40, textP)
+            // corner handle
+            c.drawRect(rect.right - hs, rect.bottom - hs, rect.right, rect.bottom, handle)
         }
 
         override fun onTouchEvent(e: MotionEvent): Boolean {
             val x = e.rawX; val y = e.rawY
-            when(e.actionMasked){
+
+            // Only handle touches that start near/inside this rectangle (with small margin for the resize handle)
+            if (e.action == MotionEvent.ACTION_DOWN &&
+                !RectF(rect.left - hs, rect.top - hs, rect.right + hs, rect.bottom + hs).contains(x, y)
+            ) {
+                return false
+            }
+
+            when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     lastX = x; lastY = y
-                    mode = if (x>rect.right-hs && y>rect.bottom-hs) 1 else 0
+                    mode = if (x > rect.right - hs && y > rect.bottom - hs) 1 else 0
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = x-lastX; val dy = y-lastY
+                    val dx = x - lastX; val dy = y - lastY
                     lastX = x; lastY = y
-                    if (mode==0){
+                    if (mode == 0) {
                         rect.offset(dx, dy)
-                        clamp()
                     } else {
                         rect.right += dx; rect.bottom += dy
-                        clamp()
                     }
+                    clamp()
                     invalidate()
                     return true
                 }
@@ -164,13 +172,13 @@ object OverlayRegions {
             return super.onTouchEvent(e)
         }
 
-        private fun clamp(){
-            if (rect.left<0) rect.offset(-rect.left,0f)
-            if (rect.top<0) rect.offset(0f,-rect.top)
-            if (rect.right>maxW) rect.right = maxW.toFloat()
-            if (rect.bottom>maxH) rect.bottom = maxH.toFloat()
-            if (rect.width()<80f) rect.right = rect.left+80f
-            if (rect.height()<60f) rect.bottom = rect.top+60f
+        private fun clamp() {
+            if (rect.left < 0) rect.offset(-rect.left, 0f)
+            if (rect.top < 0) rect.offset(0f, -rect.top)
+            if (rect.right > maxW) rect.right = maxW.toFloat()
+            if (rect.bottom > maxH) rect.bottom = maxH.toFloat()
+            if (rect.width() < 80f) rect.right = rect.left + 80f
+            if (rect.height() < 60f) rect.bottom = rect.top + 60f
         }
     }
 }
