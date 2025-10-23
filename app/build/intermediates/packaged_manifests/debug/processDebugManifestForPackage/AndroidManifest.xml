@@ -8,6 +8,8 @@
         android:minSdkVersion="24"
         android:targetSdkVersion="34" />
 
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- أذونات مطلوبة -->
@@ -31,6 +33,7 @@
         android:extractNativeLibs="false"
         android:icon="@mipmap/ic_launcher"
         android:label="AutoMathTapper OCR"
+        android:requestLegacyExternalStorage="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar" >
         <activity
