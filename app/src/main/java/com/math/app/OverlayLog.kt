@@ -34,14 +34,16 @@ object OverlayLog {
         else
             WindowManager.LayoutParams.TYPE_PHONE
         val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        )
+    WindowManager.LayoutParams.WRAP_CONTENT,
+    WindowManager.LayoutParams.WRAP_CONTENT,
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
+        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+    else
+        WindowManager.LayoutParams.TYPE_PHONE,
+    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+    PixelFormat.TRANSLUCENT
+)
         lp.gravity = Gravity.TOP or Gravity.START
         lp.x = 12; lp.y = 60
         wm?.addView(tv, lp)
@@ -71,4 +73,11 @@ object OverlayLog {
     }
 
     private fun flush() { while (buf.isNotEmpty()) tv?.append(buf.removeFirst() + "\n") }
+}
+
+
+// تمرير اللمس خارج عناصر التحكم الداخلية
+@Suppress("ClickableViewAccessibility")
+private fun _ensurePassThrough(root: android.view.View) {
+    root.setOnTouchListener { _, _ -> false }
 }

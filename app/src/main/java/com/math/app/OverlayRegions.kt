@@ -1,4 +1,6 @@
 package com.math.app
+import android.graphics.PixelFormat
+import android.view.WindowManager
 
 import android.content.Context
 import android.graphics.*
@@ -40,14 +42,16 @@ object OverlayRegions {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
 
         val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        )
+    WindowManager.LayoutParams.MATCH_PARENT,
+    WindowManager.LayoutParams.MATCH_PARENT,
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
+        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+    else
+        WindowManager.LayoutParams.TYPE_PHONE,
+    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+    PixelFormat.TRANSLUCENT
+)
         lp.gravity = Gravity.TOP or Gravity.START
 
         val root = object : ViewGroup(ctx) {
@@ -181,4 +185,11 @@ object OverlayRegions {
             if (rect.height() < 60f) rect.bottom = rect.top + 60f
         }
     }
+}
+
+
+// مرر اللمس في المساحات الفارغة (خارج المقابض/المستطيلات)
+@Suppress("ClickableViewAccessibility")
+private fun _passThrough(root: android.view.View) {
+    root.setOnTouchListener { _, _ -> false }
 }
