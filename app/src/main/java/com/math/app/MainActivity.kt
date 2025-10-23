@@ -16,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
@@ -80,7 +81,36 @@ class MainActivity : AppCompatActivity() {
 requestNotifPermissionIfNeeded()
         ensureOverlayPermission()
         refreshIndicators()
-    }
+    
+
+        // Long-press Grant to save a digit template from a region
+        findViewById<Button>(R.id.btnGrant).setOnLongClickListener {
+            val ctx = this
+            val edRegion = android.widget.EditText(ctx).apply { hint = "region 0..4 (0=Q)"; inputType = android.text.InputType.TYPE_CLASS_NUMBER }
+            val edDigit  = android.widget.EditText(ctx).apply { hint = "digit 0..9"; inputType = android.text.InputType.TYPE_CLASS_NUMBER }
+            val lay = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(48,24,48,0)
+                addView(edRegion); addView(edDigit)
+            }
+            AlertDialog.Builder(ctx)
+                .setTitle("Save digit template")
+                .setView(lay)
+                .setPositiveButton("Save") { _, _ ->
+                    val r = edRegion.text.toString().toIntOrNull()
+                    val d = edDigit.text.toString().toIntOrNull()
+                    if (r==null || d==null) {
+                        android.widget.Toast.makeText(ctx, "Enter valid numbers", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        sendBroadcast(android.content.Intent(com.math.app.AutoMathAccessibilityService.ACTION_SAVE_TEMPLATE)
+                            .putExtra("region", r).putExtra("digit", d))
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+            true
+        }
+}
 
     override fun onResume() {
         super.onResume()

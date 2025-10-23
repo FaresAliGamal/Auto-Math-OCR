@@ -20,6 +20,7 @@ class AutoMathAccessibilityService : AccessibilityService() {
     companion object {
         const val ACTION_TAP_TEXT = "com.math.app.ACTION_TAP_TEXT"
         const val ACTION_ACC_STATUS = "com.math.app.ACTION_ACC_STATUS"
+        const val ACTION_SAVE_TEMPLATE = "com.math.app.ACTION_SAVE_TEMPLATE"
 
         fun isEnabled(ctx: Context): Boolean {
             val am = ctx.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
@@ -40,11 +41,22 @@ class AutoMathAccessibilityService : AccessibilityService() {
     private val COOLDOWN = 900L
 
     private val manualTrigger = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) { runOnce(intent?.getStringExtra("target")) }
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ACTION_TAP_TEXT -> runOnce(intent.getStringExtra("target"))
+                ACTION_SAVE_TEMPLATE -> saveTemplateFromRegion(
+                    intent.getIntExtra("region", -1),
+                    intent.getIntExtra("digit", -1)
+                )
+            }
+        }
     }
 
     override fun onServiceConnected() {
-        val filter = IntentFilter(ACTION_TAP_TEXT)
+        val filter = IntentFilter().apply {
+            addAction(ACTION_TAP_TEXT)
+            addAction(ACTION_SAVE_TEMPLATE)
+        }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(manualTrigger, filter, Context.RECEIVER_NOT_EXPORTED)
         else @Suppress("DEPRECATION") registerReceiver(manualTrigger, filter)
         try { OverlayLog.show(this) } catch (_: Exception) {}
@@ -67,6 +79,30 @@ class AutoMathAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun saveTemplateFromRegion(region: Int, digit: Int) {
+        if (region !in 0..4 || digit !in 0..9) {
+            Toast.makeText(this, "Bad region/digit", Toast.LENGTH_SHORT).show(); return
+        }
+        if (!ScreenGrabber.hasProjection()) {
+            Toast.makeText(this, "Enable screen capture first", Toast.LENGTH_SHORT).show(); return
+        }
+        val bmp = ScreenGrabber.capture(this) ?: run { Toast.makeText(this, "No frame", Toast.LENGTH_SHORT).show(); return }
+        val rects = OverlayRegions.getSavedRectsPx(this)
+        if (rects.size != 5) { Toast.makeText(this, "Set regions first", Toast.LENGTH_SHORT).show(); return }
+
+        val r = rects[region]
+        val L = r.left.toInt().coerceAtLeast(0)
+        val T = r.top.toInt().coerceAtLeast(0)
+        val W = (r.width().toInt()).coerceAtLeast(1).coerceAtMost(bmp.width - L)
+        val H = (r.height().toInt()).coerceAtLeast(1).coerceAtMost(bmp.height - T)
+        val crop = Bitmap.createBitmap(bmp, L, T, W, H)
+        val norm = TemplateOcr.normalizeGlyph(ImageUtils.preprocessForDigits(crop)) ?: run {
+            Toast.makeText(this, "No glyph found", Toast.LENGTH_SHORT).show(); return
+        }
+        DigitTemplates.saveTemplate(this, digit, norm)
+        Toast.makeText(this, "Saved template for $digit from region $region", Toast.LENGTH_SHORT).show()
+    }
+
     private fun runOnce(optionalText: String?) {
         val now = SystemClock.uptimeMillis()
         if (now - lastRun < COOLDOWN) return
@@ -85,8 +121,7 @@ class AutoMathAccessibilityService : AccessibilityService() {
             solveUsingRegions(bmp, rects)
             return
         }
-
-        Toast.makeText(this, "Long-press the Run button to set regions first", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Long-press Run to set regions first", Toast.LENGTH_LONG).show()
     }
 
     private fun solveUsingRegions(full: Bitmap, rects: List<RectF>) {
@@ -115,25 +150,37 @@ class AutoMathAccessibilityService : AccessibilityService() {
                 return@recognizeBitmap
             }
 
+            val templates = DigitTemplates.loadTemplates(this)
             val ansTexts = Array(4){""}
             var readCount = 0
             fun done() {
                 if (readCount < 4) return
-                OverlayLog.post("Answers OCR: ${ansTexts.toList()}")
+                OverlayLog.post("Answers OCR (templates first): ${ansTexts.toList()}")
                 val idx = ansTexts.indexOfFirst { it == result.toString() }
                 if (idx < 0) {
-                    Toast.makeText(this, "Answer $result not found in answer regions", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Answer $result not found", Toast.LENGTH_SHORT).show()
                     return
                 }
                 val r = rects[idx+1]
-                val tap = RectF(r)
-                tapCenter(tap)
+                tapCenter(RectF(r))
                 Toast.makeText(this, "Tapped answer: $result", Toast.LENGTH_SHORT).show()
             }
 
             for (i in 1..4) {
-                val pb = ImageUtils.preprocessForDigits(crops[i])
-                OcrRegionsHelper.recognizeBitmap(pb, { t ->
+                val pre = ImageUtils.preprocessForDigits(crops[i])
+
+                var byTemplate: String? = null
+                if (templates.isNotEmpty()) {
+                    TemplateOcr.recognizeSingleDigit(pre, templates)?.let { m ->
+                        if (m.score < 0.18) byTemplate = m.digit.toString()
+                    }
+                }
+                val tmp = byTemplate
+                if (tmp != null) {
+                    ansTexts[i-1] = tmp; readCount++; done(); continue
+                }
+
+                OcrRegionsHelper.recognizeBitmap(pre, { t ->
                     val s = OcrRegionsHelper.bestLineDigits(t)
                     ansTexts[i-1] = MathSolver.normalizeDigits(s)
                     readCount++; done()
