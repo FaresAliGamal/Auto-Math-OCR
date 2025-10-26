@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace "com.math.app"
+    namespace "com.fares.automathocr"
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.math.app"
+        applicationId "com.fares.automathocr"
         minSdk 24
         targetSdk 34
         versionCode 1

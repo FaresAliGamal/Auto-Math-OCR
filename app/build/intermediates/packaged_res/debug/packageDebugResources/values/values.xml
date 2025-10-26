@@ -3,4 +3,7 @@
     <color name="ic_launcher_background">#FF5E5B</color>
     <string name="acc_desc">خدمة وصول للنقر التلقائي باستخدام OCR</string>
     <string name="app_name">AutoMathTapper OCR</string>
+    <style name="Theme.AutoMathOCR" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
 </resources>

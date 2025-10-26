@@ -1,4 +1,4 @@
-com.math.app
+com.fares.automathocr
 anim abc_fade_in
 anim abc_fade_out
 anim abc_grow_fade_in_from_bottom
@@ -3226,21 +3226,15 @@ id baseline
 id beginOnFirstDraw
 id beginning
 id bestChoice
+id blackBox
+id blackBoxText
 id blocking
 id bottom
 id bounce
 id bounceBoth
 id bounceEnd
 id bounceStart
-id btnDivide
-id btnGrant
-id btnImportTemplates
-id btnMinus
-id btnPlus
-id btnRegions
-id btnRun
-id btnTemplates
-id btnTimes
+id btnUpload
 id buttonPanel
 id cache_measures
 id callMeasure
@@ -3500,6 +3494,7 @@ id pin
 id position
 id postLayout
 id pressed
+id previewImage
 id progress_circular
 id progress_horizontal
 id radio
@@ -3512,8 +3507,6 @@ id rightToLeft
 id right_icon
 id right_side
 id rounded
-id rowSymbols
-id rowTools
 id row_index_key
 id save_non_transition_alpha
 id save_overlay_view
@@ -3571,7 +3564,6 @@ id startToEnd
 id startVertical
 id staticLayout
 id staticPostLayout
-id status
 id stop
 id stretch
 id submenuarrow
@@ -3591,7 +3583,6 @@ id tag_transition_group
 id tag_unhandled_key_event_manager
 id tag_unhandled_key_listeners
 id tag_window_insets_animation_callback
-id targetInput
 id text
 id text2
 id textEnd
@@ -4580,6 +4571,7 @@ style Theme_AppCompat_Light_Dialog_MinWidth
 style Theme_AppCompat_Light_DialogWhenLarge
 style Theme_AppCompat_Light_NoActionBar
 style Theme_AppCompat_NoActionBar
+style Theme_AutoMathOCR
 style Theme_Design
 style Theme_Design_BottomSheetDialog
 style Theme_Design_Light

@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.math.app-mergeDebugResources-31:/values-hy/values-hy.xml",
+            "outputFile": "com.fares.automathocr.app-mergeDebugResources-31:/values-hy/values-hy.xml",
             "map": [
                 {
                     "source": "/home/codespace/.gradle/caches/transforms-4/20e305e679611eecf1a8305699b0f739/transformed/jetified-play-services-basement-18.4.0/res/values-hy/values.xml",
