@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FF5E5B</color>
+    <dimen name="black_box_height">200dp</dimen>
     <string name="acc_desc">خدمة وصول للنقر التلقائي باستخدام OCR</string>
     <string name="app_name">AutoMathTapper OCR</string>
     <style name="Theme.AutoMathOCR" parent="Theme.MaterialComponents.DayNight.NoActionBar">
